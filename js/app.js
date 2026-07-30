@@ -24,7 +24,58 @@ const CONFIG = {
 
     // Количество файлов для кэширования заголовков
     maxCache: 50,
+
+    // Локализованные строки интерфейса
+    i18n: {
+        'RU': {
+            docTitle: 'Документация',
+            searchPlaceholder: 'Поиск...',
+            loading: 'Загрузка...',
+            loadingDoc: 'Загрузка документа...',
+            notFound: 'Документация не найдена.<br>Добавьте .md файлы в папку guide/',
+            langLabel: 'Язык:',
+            noDocs: 'Не найдено ни одного .md файла в папке guide/.',
+            errorNotFound: 'Документ не найден.',
+            errorNoVersions: 'У этого документа нет доступных версий.',
+            errorFileNotFound: 'Файл не найден во встроенных данных.',
+            errorRender: 'Ошибка рендеринга:',
+            calloutTip: '💡 Подсказка',
+            calloutInfo: 'ℹ️ Информация',
+            calloutNote: '📝 Заметка',
+            calloutWarning: '⚠️ Внимание',
+            calloutDanger: '🔴 Опасность',
+            calloutDefault: 'Уведомление',
+        },
+        'EN': {
+            docTitle: 'Documentation',
+            searchPlaceholder: 'Search...',
+            loading: 'Loading...',
+            loadingDoc: 'Loading document...',
+            notFound: 'No documentation found.<br>Add .md files to the guide/ folder',
+            langLabel: 'Language:',
+            noDocs: 'No .md files found in the guide/ folder.',
+            errorNotFound: 'Document not found.',
+            errorNoVersions: 'This document has no available versions.',
+            errorFileNotFound: 'File not found in embedded data.',
+            errorRender: 'Render error:',
+            calloutTip: '💡 Tip',
+            calloutInfo: 'ℹ️ Info',
+            calloutNote: '📝 Note',
+            calloutWarning: '⚠️ Warning',
+            calloutDanger: '🔴 Danger',
+            calloutDefault: 'Notice',
+        },
+    },
 };
+
+/**
+ * Возвращает локализованную строку для текущего языка интерфейса
+ */
+function t(key) {
+    const uiLang = state.currentLang || CONFIG.defaultLang;
+    const strings = CONFIG.i18n[uiLang] || CONFIG.i18n[CONFIG.defaultLang] || CONFIG.i18n['RU'];
+    return strings[key] || key;
+}
 
 /* ==========================================================================
    Состояние приложения
@@ -223,47 +274,8 @@ function slugify(text) {
  * Возвращает массив имён файлов или null при ошибке.
  */
 async function fetchFilesViaGithubApi() {
-    const gh = detectGitHubRepo();
-    if (!gh) {
-        console.log('[GitHub API] Не на github.io — пропуск');
-        return null;
-    }
-
-    const apiUrl = `https://api.github.com/repos/${gh.owner}/${gh.repo}/contents/${CONFIG.guidePath.replace(/^\.\//, '')}?ref=${CONFIG.github.branch}`;
-
-    try {
-        console.log('[GitHub API] Запрос:', apiUrl);
-        const response = await fetch(apiUrl, {
-            headers: { 'Accept': 'application/vnd.github+json' },
-        });
-
-        if (!response.ok) {
-            // Попробуем ветку master, если main не сработала
-            if (CONFIG.github.branch === 'main') {
-                CONFIG.github.branch = 'master';
-                return fetchFilesViaGithubApi();
-            }
-            console.warn('[GitHub API] Ошибка:', response.status, response.statusText);
-            return null;
-        }
-
-        const data = await response.json();
-        if (!Array.isArray(data)) {
-            console.warn('[GitHub API] Некорректный ответ');
-            return null;
-        }
-
-        const files = data
-            .filter(item => item.type === 'file' && item.name.endsWith('.md'))
-            .map(item => item.name);
-
-        console.log('[GitHub API] Найдено файлов:', files.length);
-        state.githubBasePath = `https://github.com/${gh.owner}/${gh.repo}/tree/${CONFIG.github.branch}/${CONFIG.guidePath.replace(/^\.\//, '')}`;
-        return files;
-    } catch (err) {
-        console.warn('[GitHub API] Исключение:', err);
-        return null;
-    }
+    // Отключено: используем EMBEDDED_FILE_LIST
+    return null;
 }
 
 /**
@@ -272,22 +284,8 @@ async function fetchFilesViaGithubApi() {
  * или { "files": ["file1.md", "file2.md"] }
  */
 async function fetchFilesViaManifest() {
-    const manifestUrl = `${CONFIG.guidePath}/${CONFIG.manifestFile}`;
-    try {
-        console.log('[Manifest] Запрос:', manifestUrl);
-        const response = await fetch(manifestUrl);
-        if (!response.ok) {
-            console.warn('[Manifest] Ошибка:', response.status);
-            return null;
-        }
-        const data = await response.json();
-        const files = Array.isArray(data) ? data : (data.files || []);
-        console.log('[Manifest] Найдено файлов:', files.length);
-        return files;
-    } catch (err) {
-        console.warn('[Manifest] Исключение:', err);
-        return null;
-    }
+    // Отключено: используем EMBEDDED_FILE_LIST
+    return null;
 }
 
 /**
@@ -306,21 +304,15 @@ async function fetchFileList() {
         files = await fetchFilesViaManifest();
     }
 
-    // Способ 3: встроенный fallback (для локальной разработки без сервера)
+    // Способ 3: встроенные данные (без fetch)
     if (!files || files.length === 0) {
-        console.warn('[Fallback] Не удалось получить список файлов. Использую встроенный список.');
-        files = [
-            '00-getting-started.md',
-            '00-getting-started_RU.md',
-            '01-installation.md',
-            '01-installation_RU.md',
-            '02-configuration.md',
-            '02-configuration_RU.md',
-            '03-features.md',
-            '03-features_RU.md',
-            '04-faq.md',
-            '04-faq_RU.md',
-        ];
+        if (typeof EMBEDDED_FILE_LIST !== 'undefined') {
+            console.log('[Embedded] Использую встроенный список (' + EMBEDDED_FILE_LIST.length + ' файлов).');
+            files = [...EMBEDDED_FILE_LIST];
+        } else {
+            console.warn('[Fallback] EMBEDDED_FILE_LIST не найден.');
+            files = [];
+        }
     }
 
     return files;
@@ -370,33 +362,61 @@ async function buildDocIndex(fileList) {
         return a.slug.localeCompare(b.slug);
     });
 
-    // Пробуем извлечь заголовки из файлов (только для первого языка каждого документа)
-    // Делаем это лениво: загружаем только метаданные
+    // Пробуем извлечь заголовки из файлов для каждого языка
+    // Сохраняем заголовки для каждого языка отдельно
+    // Приоритет: CONFIG.navTitles (из titles.json) > H1 из .md файла
     for (const doc of docs) {
-        // Определяем приоритетный язык для получения заголовка
-        const priorityLangs = [CONFIG.defaultLang, CONFIG.defaultLangLabel, ...Object.keys(doc.langs)];
+        doc.titles = {}; // Заголовки по языкам
         let titleFound = false;
 
-        for (const lang of priorityLangs) {
-            if (titleFound) break;
-            if (!doc.langs[lang]) continue;
-
-            try {
-                // Загружаем только первые ~2000 символов, чтобы получить H1
-                const url = `${CONFIG.guidePath}/${doc.langs[lang]}`;
-                const response = await fetch(url);
-                if (!response.ok) continue;
-
-                const text = await response.text();
+        // Извлекаем заголовки из H1 каждого .md файла
+        for (const lang of Object.keys(doc.langs)) {
+            const filename = doc.langs[lang];
+            if (typeof EMBEDDED_DOCS !== 'undefined' && EMBEDDED_DOCS[filename]) {
+                const text = EMBEDDED_DOCS[filename];
                 const title = extractTitleFromMarkdown(text);
                 if (title) {
-                    doc.title = title;
-                    titleFound = true;
-                    // Кэшируем содержимое для будущего использования
-                    state.cache.set(doc.langs[lang], { title: title, content: null });
+                    doc.titles[lang] = title;
                 }
-            } catch (err) {
-                console.warn(`[Title] Не удалось загрузить ${doc.langs[lang]}:`, err);
+            }
+        }
+
+        // Применяем кастомные заголовки из CONFIG.navTitles (если есть)
+        // Формат navTitles: { "slug": { "EN": "Title", "RU": "Заголовок" } }
+        // или старый формат: { "slug": "Title" }
+        if (CONFIG.navTitles && CONFIG.navTitles[doc.slug]) {
+            const navTitle = CONFIG.navTitles[doc.slug];
+            if (typeof navTitle === 'string') {
+                // Старый формат: одна строка — применяем ко всем языкам
+                doc.title = navTitle;
+                for (const lang of Object.keys(doc.langs)) {
+                    doc.titles[lang] = navTitle;
+                }
+                titleFound = true;
+            } else if (typeof navTitle === 'object') {
+                // Новый мультиязычный формат
+                for (const [lang, title] of Object.entries(navTitle)) {
+                    if (lang === '_default') {
+                        // _default — заголовок для всех языков без явного перевода
+                        for (const existingLang of Object.keys(doc.langs)) {
+                            if (!navTitle[existingLang]) {
+                                doc.titles[existingLang] = title;
+                            }
+                        }
+                    } else {
+                        doc.titles[lang] = title;
+                    }
+                }
+            }
+        }
+
+        // Определяем заголовок по умолчанию (doc.title)
+        const priorityLangs = [CONFIG.defaultLang, CONFIG.defaultLangLabel, ...Object.keys(doc.langs)];
+        for (const lang of priorityLangs) {
+            if (titleFound) break;
+            if (doc.titles[lang]) {
+                doc.title = doc.titles[lang];
+                titleFound = true;
             }
         }
     }
@@ -418,7 +438,7 @@ function renderNav() {
                     <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
                     <polyline points="14 2 14 8 20 8"></polyline>
                 </svg>
-                <span>Документация не найдена.<br>Добавьте .md файлы в папку guide/</span>
+                <span>${t('notFound')}</span>
             </div>
         `;
         return;
@@ -497,6 +517,9 @@ function renderNavItem(doc) {
         return a.localeCompare(b);
     });
 
+    // Используем заголовок на текущем языке, если доступен
+    const displayTitle = (doc.titles && doc.titles[state.currentLang]) || doc.title;
+
     const langsHtml = langs.length > 1 ? `
         <div class="nav-item-langs">
             ${langs.map(lang => `
@@ -509,7 +532,7 @@ function renderNavItem(doc) {
 
     return `
         <div class="nav-item ${isActive ? 'active' : ''}" data-slug="${escapeHtml(doc.slug)}">
-            <span class="nav-item-title">${escapeHtml(doc.title)}</span>
+            <span class="nav-item-title">${escapeHtml(displayTitle)}</span>
             ${langsHtml}
         </div>
     `;
@@ -550,35 +573,36 @@ async function loadDocument(slug, lang) {
     state.currentSlug = slug;
     state.currentLang = lang;
 
+    // Сохраняем выбранный язык в localStorage
+    localStorage.setItem('md-viewer-lang', lang);
+
     // Обновляем URL hash для deep linking
     const hash = `#/${slug}${lang && lang !== CONFIG.defaultLangLabel ? `/${lang}` : ''}`;
     if (window.location.hash !== hash) {
         history.replaceState(null, '', hash);
     }
 
+    // Обновляем заголовок и элементы интерфейса в зависимости от языка
+    updateUILanguage();
+
     // Показываем индикатор загрузки
     const contentInner = document.getElementById('contentInner');
     contentInner.innerHTML = `
         <div class="content-loading">
             <div class="spinner"></div>
-            <p>Загрузка документа...</p>
+            <p>${t('loadingDoc')}</p>
         </div>
     `;
 
     // Прокручиваем наверх
     window.scrollTo({ top: 0, behavior: 'instant' });
 
-    // Загружаем содержимое файла
-    const url = `${CONFIG.guidePath}/${filename}`;
+    // Берём содержимое из встроенных данных (без fetch)
     let mdContent;
-    try {
-        const response = await fetch(url);
-        if (!response.ok) {
-            throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-        }
-        mdContent = await response.text();
-    } catch (err) {
-        showError(`Не удалось загрузить файл <code>${escapeHtml(filename)}</code>.<br><br>${escapeHtml(err.message)}`);
+    if (typeof EMBEDDED_DOCS !== 'undefined' && EMBEDDED_DOCS[filename]) {
+        mdContent = EMBEDDED_DOCS[filename];
+    } else {
+        showError(`Файл <code>${escapeHtml(filename)}</code> не найден во встроенных данных.`);
         return;
     }
 
@@ -592,7 +616,7 @@ async function loadDocument(slug, lang) {
         if (typeof marked !== 'undefined') {
             marked.setOptions({
                 gfm: true,          // GitHub Flavored Markdown
-                breaks: true,       // Переносы строк -> <br>
+                breaks: false,      // Переносы строк внутри абзацев НЕ становятся <br>
                 headerIds: true,
                 mangle: false,
             });
@@ -631,7 +655,7 @@ async function loadDocument(slug, lang) {
 
     const langSwitcherHtml = langs.length > 1 ? `
         <div class="doc-langs">
-            <span class="doc-langs-label">Язык:</span>
+            <span class="doc-langs-label">${t('langLabel')}</span>
             ${langs.map(l => `
                 <button class="doc-lang-btn ${l === lang ? 'active' : ''}" 
                         data-lang="${escapeHtml(l)}"
@@ -693,8 +717,8 @@ async function loadDocument(slug, lang) {
         }
     });
 
-    // Обновляем активный пункт меню
-    updateActiveNavItem();
+    // Обновляем активный пункт меню и перерисовываем навигацию (для обновления заголовков)
+    renderNav();
 
     // На мобильных — закрываем боковое меню
     if (window.innerWidth <= 768) {
@@ -718,16 +742,16 @@ function processCallouts(html) {
     };
 
     const titleMap = {
-        'tip': '💡 Подсказка',
-        'info': 'ℹ️ Информация',
-        'note': '📝 Заметка',
-        'warning': '⚠️ Внимание',
-        'danger': '🔴 Опасность',
+        'tip': t('calloutTip'),
+        'info': t('calloutInfo'),
+        'note': t('calloutNote'),
+        'warning': t('calloutWarning'),
+        'danger': t('calloutDanger'),
     };
 
     return html.replace(calloutRegex, (match, type, content) => {
         const cssClass = typeMap[type] || 'callout';
-        const title = titleMap[type] || 'Уведомление';
+        const title = titleMap[type] || t('calloutDefault');
         return `<div class="${cssClass}"><div class="callout-title">${title}</div>${content.trim()}</div>`;
     });
 }
@@ -753,6 +777,21 @@ function addAnchorLinks(html) {
     });
 
     return doc.querySelector('div').innerHTML;
+}
+
+function updateUILanguage() {
+    // Обновляем заголовок "Документация" в сайдбаре
+    const logoText = document.querySelector('.logo-text');
+    if (logoText) {
+        logoText.textContent = t('docTitle');
+    }
+    // Обновляем placeholder поиска
+    const searchInput = document.getElementById('searchInput');
+    if (searchInput) {
+        searchInput.placeholder = t('searchPlaceholder');
+    }
+    // Обновляем заголовок страницы
+    document.title = t('docTitle');
 }
 
 function showError(message) {
@@ -922,18 +961,23 @@ async function init() {
     // Рендерим навигацию
     renderNav();
 
+    // Восстанавливаем сохранённый язык из localStorage
+    const savedLang = localStorage.getItem('md-viewer-lang');
+
     // Определяем, какой документ открыть первым
     const parsed = parseUrlHash();
     if (parsed && state.docs.find(d => d.slug === parsed.slug)) {
-        // Открываем по URL hash
-        loadDocument(parsed.slug, parsed.lang);
+        // Открываем по URL hash, но учитываем сохранённый язык если в URL не указан
+        const lang = parsed.lang || savedLang || CONFIG.defaultLang;
+        loadDocument(parsed.slug, lang);
     } else if (state.docs.length > 0) {
-        // Открываем первый документ
+        // Открываем первый документ с учётом сохранённого языка
         const first = state.docs[0];
-        const preferredLang = first.langs[CONFIG.defaultLang] ? CONFIG.defaultLang : Object.keys(first.langs)[0];
+        const preferredLang = savedLang && first.langs[savedLang] ? savedLang
+            : (first.langs[CONFIG.defaultLang] ? CONFIG.defaultLang : Object.keys(first.langs)[0]);
         loadDocument(first.slug, preferredLang);
     } else {
-        showError('Не найдено ни одного .md файла в папке guide/.');
+        showError(t('noDocs'));
     }
 }
 
