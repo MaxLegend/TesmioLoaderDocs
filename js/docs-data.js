@@ -143,7 +143,8 @@ adjust a number" and "I lost my city".
 | [04-accumulator](04-accumulator.md) | Build a battery that stores spare electricity |
 | [05-needs](05-needs.md) | Give citizens a new thing to shop for |
 | [06-walking](06-walking.md) | Change how far citizens will walk or drive |
-| [07-buildings](07-buildings.md) | Add a whole new building by cloning an existing one |
+| [07-buildings](07-buildings.md) | Add a whole new building by cloning an existing one **(WiP)** |
+| [08-cities](08-cities.md) | Change each city's radius and shape independently |
 
 Read a guide's own warnings before turning its plugin on — a couple of them
 (resources, needs, depletion) touch the save file in ways that are not
@@ -293,7 +294,8 @@ tesmioloader\\build\\tesmioloader.log     <- что произошло в про
 | [04-accumulator](04-accumulator_RU.md) | Построить аккумулятор, который запасает лишнее электричество |
 | [05-needs](05-needs_RU.md) | Дать жителям новый товар, за которым они будут ходить в магазин |
 | [06-walking](06-walking_RU.md) | Изменить, как далеко жители готовы ходить пешком или ехать на машине |
-| [07-buildings](07-buildings_RU.md) | Добавить целое новое здание, склонировав существующее |
+| [07-buildings](07-buildings_RU.md) | Добавить целое новое здание, склонировав существующее **(WiP)** |
+| [08-cities](08-cities_RU.md) | Изменить радиус и форму каждого города независимо |
 
 Перед включением плагина прочитайте предупреждения в его инструкции — у
 некоторых (resources, needs, depletion) изменения затрагивают файл
@@ -416,14 +418,84 @@ price     my_resource               0.00 RUB       0.00 USD   base 0.00 / 0.00  
 \`0.00\` means "nothing in the game currently produces this" — not a bug, just
 the fact the price sections above exist to fix.
 
+## Creating a resource from scratch (\`custom\`)
+
+Most of the time you'll clone an existing resource and be done. But if you need
+something that behaves like **nothing** in the base game — a gas that travels in
+a tank, say — you can write \`custom\` instead of a template name:
+
+\`\`\`ini
+[list]
+hydrogen = custom, Hydrogen
+\`\`\`
+
+This tells the plugin: don't copy any donor record; build a blank one and fill
+it from a \`[custom:hydrogen]\` section further down in the same file. The section
+lists only the fields you want to set — everything else stays at the plugin's
+own default (which matches what a typical base-game resource carries).
+
+\`\`\`ini
+[custom:hydrogen]
+transport  = oil          ; carried in a tank, like oil
+kind       = 1            ; 0 raw, 1 manufactured, 2 food/clothes, 3 meat/etc., 4 electronics
+price      = 180, 150     ; starting rouble / dollar price
+market_rub = 400, 600     ; two market-block figures (rubble currency)
+market_usd = 500, 700     ; same, dollar currency
+family     = none         ; waste family: none, gravel, steel, aluminium, …
+cargo      = none         ; cargo geometry: none, bulk, open, or auto
+\`\`\`
+
+### Fields you can set in \`[custom:<name>]\`
+
+| Field | What it does |
+|---|---|
+| \`transport = <class>[, <factor>[, <f1>, <f2>[, <flag>]]]\` | **The one line that matters.** Which transport class carries this resource. You can name it (\`covered\`, \`open\`, \`gravel\`, \`oil\`, \`cement\`, \`livestock\`, \`eletric\`, \`vehicles\`, \`general\`, \`nuclear1\`, \`nuclear2\`, \`heating\`, \`water\`, \`sewage\`, \`waste\`, …), use the game's own token (\`RESOURCE_TRANSPORT_GRAVEL\`), or its number (0–17). Without this, nothing can carry the resource and every storage naming it reports 0.00 t. |
+| \`class = <class>[, …]\` | A second (or third, …) transport class, repeatable. \`general\` without its own numbers mirrors whatever \`transport\` named. \`factor\` is the storage-capacity multiplier; \`f1\`/\`f2\` are class-specific figures the base game sets per class; \`flag\` marks the class as "not tradeable in this class". |
+| \`kind = 0..4\` | Price kind: 0 raw, 1 manufactured, 2 food and clothes, 3 meat/asphalt/concrete/components, 4 electronics. Negative values are reserved for workers/heat and not for mod resources. |
+| \`price = <rub>[, <usd>]\` | Starting price before the engine's own price pass overwrites it. |
+| \`base_price = <rub>[, <usd>]\` | Raw-material value the solver starts from. |
+| \`trade_mult = 0.95, 1.05\` | Sell and buy multipliers the trade window applies. Every base-game tradeable resource carries exactly these. |
+| \`market_rub = 200, 350[, 0.5]\` | Two large figures and a coefficient for the rouble market block. |
+| \`market_usd = 500, 500[, 0.5]\` | Same, for the dollar market block. |
+| \`packed = auto\` | One byte. \`auto\` sets it for a primary class of covered, cooler, nuclear1 or nuclear2 — the rule that reproduces all 57 base-game records exactly. |
+| \`family = none\` | Material family (10–19): gravel, steel, aluminium, plastic, bio, food, burnable, toxic, other, ash, or \`none\` (−1). |
+| \`cargo = auto\` | Which cargo geometry to load: \`none\`, \`bulk\` (four pile stages), \`open\` (one model on a grid), or \`auto\` (detect from files). |
+| \`field = <off>, f\\|i\\|b, <v>\` | Escape hatch: writes a float, int or byte at any offset in the 832-byte record. For fields whose meaning isn't yet named. |
+
+You can also use \`[custom:<name>]\` on a **template-based** resource to override
+individual fields of the clone — for example, \`[custom:copper_ore]\` with just
+\`kind = 1\` changes the price kind while keeping everything else from \`rawiron\`.
+
+## Customhouse re-sync (\`[customs]\` section)
+
+A customhouse builds its trade-slot list **once**, when its \`building.ini\` is
+parsed. If you add a new resource to \`[list]\` after the customhouse already
+exists in a save, it won't appear in that customhouse's trade window — even
+though the resource is otherwise perfectly tradeable.
+
+The \`[customs]\` section fixes this: it re-syncs every standing customhouse's
+trade slots against the live \`[list]\` the first time each one ticks after the
+plugin loads.
+
+\`\`\`ini
+[customs]
+hook = 1          ; 0 = off (base-game behaviour: only what was known at build time)
+                   ; 1 = re-sync standing customhouses so they see new resources
+probe = 0          ; 1 = log every resource added to each customhouse (verbose)
+\`\`\`
+
+If you set \`hook = 0\`, the only manual fix is to demolish and rebuild the
+customhouse. Leave \`hook = 1\` unless you have a reason not to.
+
 ## Settings you probably don't need to touch
 
 | Setting | What it is |
 |---|---|
 | \`hook\` | Whether the plugin is watching resource lookups at all. Leave at \`2\`. |
-| \`resource_capacity\` | How much room to reserve for resources. Leave at \`0\` — the plugin works this out from \`[list]\` automatically. |
-| \`price_hook\` | Turns the whole pricing feature above on/off. Leave at \`1\` unless you want \`[base_price]\`/\`[price]\` to do nothing. |
-| \`price_report\` | Prints the price table to the log. Turn to \`0\` once you've checked the numbers you care about — it runs on every price recompute. |
+| \`resource_capacity\` | How much room to reserve for resources. Leave at \`0\` — the plugin works this out from \`[list]\` automatically. Set \`-1\` to never move the array (max 63 records, same as old versions). Set a positive number to guarantee at least that many slots. |
+| \`price_hook\` | Turns the whole pricing feature above on/off. Leave at \`1\` unless you want \`[base_price]\`/\`[price]\` to do nothing. Needs \`hook = 2\`. |
+| \`price_report\` | Prints the price table to the log after every recompute. Turn to \`0\` once you've checked the numbers you care about. |
+| \`custom_report\` | Prints the full record (kind, prices, market blocks, all transport classes) for every declared resource. Always on for \`custom\` resources (no donor to compare against); this switch adds it for template-based ones too. Leave at \`0\` unless you're debugging what a clone inherited. |
 
 ## Troubleshooting
 
@@ -558,14 +630,88 @@ price     my_resource               0.00 RUB       0.00 USD   base 0.00 / 0.00  
 \`0.00\` означает «сейчас в игре никто это не производит» — не баг, а именно
 то, что и лечится разделами выше.
 
+## Создание ресурса с нуля (\`custom\`)
+
+Чаще всего вы клонируете существующий ресурс — и этого достаточно. Но если нужно
+что-то, что ведёт себя **совершенно не так**, как любой ресурс в оригинальной
+игре — например, газ, который возят в цистерне, — напишите \`custom\` вместо имени
+шаблона:
+
+\`\`\`ini
+[list]
+hydrogen = custom, Водород
+\`\`\`
+
+Это говорит плагину: не копировать донорную запись; создать пустую и заполнить
+её из секции \`[custom:hydrogen]\` ниже в том же файле. В секции указывайте
+только те поля, которые хотите задать — всё остальное останется на значении по
+умолчанию (которое совпадает с типичной записью базовой игры).
+
+\`\`\`ini
+[custom:hydrogen]
+transport  = oil          ; возится в цистерне, как нефть
+kind       = 1            ; 0 сырьё, 1 промтовар, 2 еда/одежда, 3 мясо/итп., 4 электроника
+price      = 180, 150     ; начальная цена в рублях / долларах
+market_rub = 400, 600     ; два числа рыночного блока (рубли)
+market_usd = 500, 700     ; то же, доллары
+family     = none         ; семейство отходов: none, gravel, steel, aluminium, …
+cargo      = none         ; геометрия груза: none, bulk, open или auto
+\`\`\`
+
+### Поля, которые можно задать в \`[custom:<имя>]\`
+
+| Поле | Что делает |
+|---|---|
+| \`transport = <класс>[, <множитель>[, <f1>, <f2>[, <флаг>]]]\` | **Единственная строка, которая реально нужна.** Какой транспортный класс перевозит этот ресурс. Можно указать имя (\`covered\`, \`open\`, \`gravel\`, \`oil\`, \`cement\`, \`livestock\`, \`eletric\`, \`vehicles\`, \`general\`, \`nuclear1\`, \`nuclear2\`, \`heating\`, \`water\`, \`sewage\`, \`waste\`, …), токен игры (\`RESOURCE_TRANSPORT_GRAVEL\`) или номер (0–17). Без этого никто не может везти ресурс, и каждое хранилище с его именем покажет 0.00 т. |
+| \`class = <класс>[, …]\` | Второй (треттий, …) транспортный класс, повторяемый. \`general\` без собственных чисел копирует то, что указано в \`transport\`. \`множитель\` — множитель вместимости хранилища; \`f1\`/\`f2\` — класс-специфичные числа; \`флаг\` помечает класс как «не торгуется в этом классе». |
+| \`kind = 0..4\` | Тип цены: 0 сырьё, 1 промтовар, 2 еда и одежда, 3 мясо/асфальт/бетон/компоненты, 4 электроника. Отрицательные значения зарезервированы за рабочими/теплом и не предназначены для модовых ресурсов. |
+| \`price = <руб>[, <usd>]\` | Начальная цена до того, как проход ценообразования игры перезапишет её. |
+| \`base_price = <руб>[, <usd>]\` | Стоимость сырья, от которой стартует решатель. |
+| \`trade_mult = 0.95, 1.05\` | Множители продажи и покупки, которые окно торговли применяет к цене. У каждого торгуемого ресурса базовой игры стоят ровно эти два. |
+| \`market_rub = 200, 350[, 0.5]\` | Два больших числа и коэффициент для рублёвого рыночного блока. |
+| \`market_usd = 500, 500[, 0.5]\` | То же, для долларового рыночного блока. |
+| \`packed = auto\` | Один байт. \`auto\` включает для первичного класса covered, cooler, nuclear1 или nuclear2 — правило, которое точно воспроизводит все 57 записей базовой игры. |
+| \`family = none\` | Семейство материалов (10–19): gravel, steel, aluminium, plastic, bio, food, burnable, toxic, other, ash или \`none\` (−1). |
+| \`cargo = auto\` | Какую геометрию груза загружать: \`none\`, \`bulk\` (четыре стадии кучки), \`open\` (одна модель на сетке) или \`auto\` (определить по файлам). |
+| \`field = <смещение>, f\\|i\\|b, <значение>\` | Люк-лазейка: записывает float, int или byte по любому смещению в 832-байтной записи. Для полей, которым ещё не придумали имя. |
+
+Секцию \`[custom:<имя>]\` можно использовать и для ресурса на основе шаблона —
+чтобы переопределить отдельные поля клона. Например, \`[custom:copper_ore]\` с
+единственной строкой \`kind = 1\` изменит тип цены, оставив всё остальное
+от \`rawiron\`.
+
+## Пересинхронизация таможни (секция \`[customs]\`)
+
+Таможенный склад строит свой список торгуемых слотов **один раз** — при разборе
+\`building.ini\`. Если вы добавили новый ресурс в \`[list]\` после того, как таможня
+уже стоит в сохранении, он не появится в её окне торговли — хотя ресурс
+полностью пригоден для торговли.
+
+Секция \`[customs]\` это исправляет: при первой же обработке каждой стоящей
+таможни после загрузки плагина она пересинхронизирует слоты торговли с текущим
+\`[list]\`.
+
+\`\`\`ini
+[customs]
+hook = 1          ; 0 = выкл. (поведение базовой игры: только то, что было известно
+                   ;         на момент постройки)
+                   ; 1 = пересинхронизировать стоящие таможни, чтобы они увидели
+                   ;     новые ресурсы
+probe = 0          ; 1 = писать в лог каждый ресурс, добавленный таможне (подробно)
+\`\`\`
+
+Если \`hook = 0\`, единственный ручной способ — снести и перестроить таможню.
+Оставьте \`hook = 1\`, если нет веской причины выключить.
+
 ## Настройки, которые обычно трогать не нужно
 
 | Настройка | Что это |
 |---|---|
 | \`hook\` | Отслеживает ли плагин поиск ресурсов вообще. Оставьте \`2\`. |
-| \`resource_capacity\` | Сколько места резервировать под ресурсы. Оставьте \`0\` — плагин сам вычислит нужное из \`[list]\`. |
-| \`price_hook\` | Включает/выключает всю функцию ценообразования выше. Оставьте \`1\`, иначе \`[base_price]\`/\`[price]\` не будут работать. |
-| \`price_report\` | Печатает таблицу цен в лог. Выключите (\`0\`), когда проверите нужные цифры — иначе пишет при каждом пересчёте. |
+| \`resource_capacity\` | Сколько места резервировать под ресурсы. Оставьте \`0\` — плагин сам вычислит нужное из \`[list]\`. Установите \`-1\`, чтобы никогда не перемещать массив (макс. 63 записи, как в старых версиях). Положительное число гарантирует минимум столько слотов. |
+| \`price_hook\` | Включает/выключает всю функцию ценообразования выше. Оставьте \`1\`, иначе \`[base_price]\`/\`[price]\` не будут работать. Требует \`hook = 2\`. |
+| \`price_report\` | Печатает таблицу цен в лог после каждого пересчёта. Выключите (\`0\`), когда проверите нужные цифры. |
+| \`custom_report\` | Печатает полную запись (тип, цены, рыночные блоки, все транспортные классы) для каждого объявленного ресурса. Для ресурсов \`custom\` включено всегда (не с чем сравнивать); этот переключатель добавляет его и для ресурсов на основе шаблонов. Оставьте \`0\`, если не отлаживаете, что именно унаследовал клон. |
 
 ## Решение проблем
 
@@ -2064,6 +2210,264 @@ those lines rather than guessing.
   подписку из мастерской или сделанный вручную предмет. Выберите другой
   \`id\`.
 `,
+    "08-cities.md": `[English](08-cities.md) | [Русский](08-cities_RU.md)
+
+# Cities
+
+New to this? Read [00-getting-started](00-getting-started.md) first.
+
+## What this plugin does
+
+In the base game, a city is a name, a position, and a fixed circle of exactly
+1000 metres around it. Every building inside that circle belongs to that city,
+and the number — 1000 — is one constant shared by every city on the map. You
+cannot make one city larger and another smaller, you cannot change the shape,
+and a building just outside every circle has no city at all.
+
+This plugin makes the radius **per-city** — each city gets its own slider on
+its information window — and adds a **square shape** option, so a city can be
+a box instead of a circle. Both the radius and the shape are shown on the
+city's own info panel, and you change them per city without touching any file.
+
+Nothing changes until you move a slider: the defaults are the base game exactly
+(1000 m, circular).
+
+## How to use it
+
+1. Make sure \`cities\` is ticked in the launcher (or \`cities=1\` in
+   \`tesmioloader.ini\`).
+2. Start the game and load a save.
+3. Click on any city to open its information window. Two new rows appear:
+   a **radius slider** and a **square/circle checkbox**.
+4. Drag the slider or click the checkbox. The city's boundary updates
+   immediately — you can see it on the ground as the blue dot overlay
+   changes shape.
+5. Buildings that end up inside the new boundary join the city; buildings that
+   end up outside it leave the city. If a building is outside *every* city,
+   the plugin automatically creates a new city for it (see \`adopt\` below).
+
+No \`.ini\` editing is required for basic use — the settings below are for
+tuning the slider range, the overlay, and diagnostics.
+
+## What happens to buildings left outside every city
+
+Shrinking a city's radius can push buildings past its boundary. If those
+buildings are still inside another city, they simply belong to that one
+instead. If they are outside *all* cities, the base game has no concept of
+that situation — a building must belong to somewhere.
+
+With \`adopt = 1\` (the default), the plugin hands every such orphan to the
+game's own city-creation function: it gets a random unused name and the
+current date as "date established", exactly as if it had been built there in
+the wild. With \`adopt = 0\`, the building simply has no city, which is
+untested territory and may cause odd behaviour.
+
+## The blue dot overlay
+
+When a city's information window is open, the game paints a grid of blue dots
+on the ground to show which buildings belong to that city. In the base game
+this grid always scans a fixed 1000 m circle — so without the plugin's help
+it ignores any raised radius and any square shape entirely, because the
+corners and anything past 1000 m are simply never sampled.
+
+With \`overlay = 1\` (the default), the plugin patches the overlay to respect
+the actual radius and shape of the city being viewed. The dots then cover
+the whole territory of that city, not just the inner 1000 m.
+
+The spacing of that grid is controlled by \`overlay_step\`. At \`0\` (the
+default) it follows the radius — one twentieth of it, never finer than the
+game's own 50 m — because the scan is quadratic: at a 5000 m radius and a
+fixed 50 m step, the game would test 200 × 200 points against every city on
+the map, every frame the window is open.
+
+## The per-city radius lives in your save
+
+The radius and shape for each city are stored in your save file — appended
+after everything the game itself writes. This means:
+
+- A save made with this plugin **still loads without it**. What it will not
+  carry back is the radii: every city goes back to 1000 m and buildings are
+  reassigned accordingly.
+- You do not need to do anything special to persist your changes — just save
+  the game normally.
+
+## Tuning the slider
+
+Open \`tesmioloader\\build\\plugins\\cities.ini\` (close the game first, as
+always):
+
+- **\`radius\`** — the default radius for cities that have never been touched.
+  \`1000\` is the base game. Anything else changes every city on every map at
+  once (until you move an individual slider in-game).
+- **\`square\`** — \`0\` for circles (default), \`1\` for squares. Same as \`radius\`,
+  this is the global default for untouched cities.
+- **\`radius_min\`** / **\`radius_max\`** — the ends of the slider. The slider is
+  the game's own 0–100 widget, so the resolution is \`(max - min) / 100\`.
+  With \`200..5000\` one click of the −/+ buttons is 48 m per \`step\`. Default
+  \`200\` and \`5000\`.
+- **\`step\`** — percent per click of the slider's − and + buttons. Dragging
+  the bar itself ignores this. Default \`2\`.
+- **\`window\`** — \`1\` (default) shows the two extra rows (radius slider and
+  shape checkbox) on the city window. \`0\` keeps the mechanic but takes away
+  the only way to drive it — useful if you want to force a default radius
+  from the \`.ini\` and not let players change it per-city.
+
+## Settings you probably don't need to touch
+
+| Setting | What it is |
+|---|---|
+| \`label_x\` | Horizontal position of the label text inside the city window, in the game's layout units. Default \`10\`. |
+| \`widget_x\` | Where the slider/checkbox starts, same units. Default \`200\`. |
+| \`checkbox_dy\` | Vertical offset for the shape checkbox row — needed because the game draws checkboxes above their given position. Default \`25\`. Raise it to push the row down, lower to pull it up. |
+| \`overlay_step\` | Grid spacing for the blue dot overlay, in metres. \`0\` auto-scales to one twentieth of the radius (never finer than 50 m). |
+| \`probe\` | Prints the whole city table after every load — radius, shape and building count per city — plus per-frame details while a city window is open. Default \`0\`. |
+
+## Troubleshooting
+
+- **The two new rows don't appear on the city window** — check \`window = 1\`
+  and that the plugin is actually loaded (search for \`cities\` in
+  \`tesmioloader.log\`).
+- **The blue dots still show a 1000 m circle after raising the radius** —
+  check \`overlay = 1\`. Without it the overlay is the game's own, which always
+  scans 1000 m.
+- **A building has no city after shrinking** — with \`adopt = 1\` the plugin
+  should have created one; check \`tesmioloader.log\` for details. With
+  \`adopt = 0\` this is expected — the building is city-less.
+- **Want to go back to the base game** — set \`enabled = 0\` or untick
+  \`cities\` in the launcher. Next time you load the save, every city returns
+  to 1000 m circular and buildings are reassigned accordingly.
+`,
+    "08-cities_RU.md": `[English](08-cities.md) | [Русский](08-cities_RU.md)
+
+# Cities
+
+Впервые здесь? Сначала прочитайте
+[00-getting-started](00-getting-started_RU.md).
+
+## Что делает этот плагин
+
+В базовой игре город — это имя, позиция и фиксированный круг ровно в 1000
+метров вокруг неё. Каждое здание внутри этого круга принадлежит этому городу,
+а число 1000 — одна константа, общая для всех городов на карте. Нельзя сделать
+один город больше, а другой меньше, нельзя изменить форму, а здание, оказавшееся
+за пределами всех кругов, не принадлежит ни одному городу.
+
+Этот плагин делает радиус **индивидуальным для каждого города** — на окне
+информации города появляется собственный слайдер — и добавляет опцию
+**квадратной формы**, чтобы город мог быть не кругом, а квадратом. И радиус,
+и форма показываются на панели информации города, и вы меняете их для каждого
+города отдельно, не открывая никаких файлов.
+
+Пока вы не подвинете слайдер, ничего не меняется: значения по умолчанию —
+в точности как в базовой игре (1000 м, круг).
+
+## Как этим пользоваться
+
+1. Убедитесь, что в лаунчере отмечен \`cities\` (или в \`tesmioloader.ini\` стоит
+   \`cities=1\`).
+2. Запустите игру и загрузите сохранение.
+3. Кликните на любой город, чтобы открыть его окно информации. Появятся две
+   новые строки: **слайдер радиуса** и **галочка круг/квадрат**.
+4. Подвиньте слайдер или поставьте галочку. Граница города обновится
+   немедленно — вы увидите это на земле: оверлей синих точек поменяет форму.
+5. Здания, оказавшиеся внутри новой границы, присоединятся к городу;
+   оказавшиеся снаружи — покинут его. Если здание оказалось вне *всех*
+   городов, плагин автоматически создаст для него новый город
+   (см. \`adopt\` ниже).
+
+Для базового использования редактировать \`.ini\` не нужно — настройки ниже
+регулируют диапазон слайдера, оверлей и диагностику.
+
+## Что происходит со зданиями, оставшимися вне всех городов
+
+Уменьшение радиуса города может вытолкнуть здания за его границу. Если эти
+здания всё ещё внутри другого города, они просто перейдут к нему. Если же они
+оказались вне *всех* городов — в базовой игре такой ситуации не существует:
+здание обязано кому-то принадлежать.
+
+При \`adopt = 1\` (по умолчанию) плагин передаёт каждого такого «сироту»
+собственной функции создания города: здание получает случайное неиспользуемое
+имя и текущую дату как «дату основания» — точно так же, как если бы оно было
+построено в чистом поле. При \`adopt = 0\` здание просто остаётся без города —
+это не протестированная ситуация и может вызывать странное поведение.
+
+## Оверлей синих точек
+
+Когда окно информации города открыто, игра рисует на земле сетку синих точек,
+показывая, какие здания принадлежат этому городу. В базовой игре эта сетка
+всегда сканирует фиксированный круг в 1000 м — поэтому без помощи плагина она
+игнорирует увеличенный радиус и квадратную форму: углы и всё что дальше 1000 м
+просто не проверяются.
+
+При \`overlay = 1\` (по умолчанию) плагин исправляет оверлей, чтобы он
+учитывал реальный радиус и форму просматриваемого города. Точки тогда
+покрывают всю территорию города, а не только внутренние 1000 м.
+
+Шаг сетки управляется параметром \`overlay_step\`. При \`0\` (по умолчанию) шаг
+масштабируется вместе с радиусом — одна двадцатая от него, но не мельче
+собственного шага игры в 50 м — потому что сканирование квадратичное: при
+радиусе 5000 м и фиксированном шаге 50 м игре пришлось бы проверять 200 × 200
+точек против каждого города на карте, каждый кадр пока окно открыто.
+
+## Индивидуальный радиус хранится в сохранении
+
+Радиус и форма каждого города записываются в файл сохранения — дописываются
+после всего, что сама игра туда пишет. Это значит:
+
+- Сохранение, сделанное с этим плагином, **загружается и без него**. Что
+  при этом не сохранится — это радиусы: каждый город вернётся к 1000 м, а
+  здания будут перераспределены соответственно.
+- Ничего особенного для сохранения изменений делать не нужно — просто
+  сохраните игру как обычно.
+
+## Настройка слайдера
+
+Откройте \`tesmioloader\\build\\plugins\\cities.ini\` (как всегда, сначала закрыв
+игру):
+
+- **\`radius\`** — радиус по умолчанию для городов, которые ни разу не
+  трогали. \`1000\` — как в базовой игре. Любое другое значение меняет сразу
+  все города на всех картах (пока вы не подвинете индивидуальный слайдер
+  в игре).
+- **\`square\`** — \`0\` для круга (по умолчанию), \`1\` для квадрата. Как и
+  \`radius\`, это глобальное значение по умолчанию для нетронутых городов.
+- **\`radius_min\`** / **\`radius_max\`** — концы слайдера. Слайдер — это
+  собственный виджет игры от 0 до 100, поэтому разрешение —
+  \`(max − min) / 100\`. При \`200..5000\` один клик кнопок −/+ сдвигает на 48 м
+  при \`step\` по умолчанию. По умолчанию \`200\` и \`5000\`.
+- **\`step\`** — процент за один клик кнопок − и + слайдера. Перетаскивание
+  самой полоски это игнорирует. По умолчанию \`2\`.
+- **\`window\`** — \`1\` (по умолчанию) показывает две дополнительные строки
+  (слайдер радиуса и галочку формы) в окне города. \`0\` оставляет механику,
+  но убирает единственный способ ей управлять — полезно, если вы хотите
+  задать радиус по умолчанию из \`.ini\` и не давать игрокам менять его
+  в каждом городе.
+
+## Настройки, которые обычно трогать не нужно
+
+| Настройка | Что это |
+|---|---|
+| \`label_x\` | Горизонтальная позиция текста подписи в окне города, в единицах layout игры. По умолчанию \`10\`. |
+| \`widget_x\` | Где начинается слайдер/галочка, те же единицы. По умолчанию \`200\`. |
+| \`checkbox_dy\` | Вертикальное смещение строки с галочкой формы — нужно, потому что игра рисует галочки выше переданной позиции. По умолчанию \`25\`. Увеличьте, чтобы сдвинуть строку вниз, уменьшите — вверх. |
+| \`overlay_step\` | Шаг сетки оверлея синих точек, в метрах. \`0\` автоматически масштабируется к одной двадцатой радиуса (но не мельче 50 м). |
+| \`probe\` | Печатает всю таблицу городов после каждой загрузки — радиус, форма и количество зданий в каждом — плюс детали по кадрам, пока окно города открыто. По умолчанию \`0\`. |
+
+## Решение проблем
+
+- **Две новые строки не появились в окне города** — проверьте \`window = 1\`
+  и что плагин реально загрузился (найдите \`cities\` в
+  \`tesmioloader.log\`).
+- **Синие точки всё ещё показывают круг 1000 м после увеличения радиуса** —
+  проверьте \`overlay = 1\`. Без него оверлей остаётся игровым, который всегда
+  сканирует 1000 м.
+- **У здания нет города после уменьшения радиуса** — при \`adopt = 1\` плагин
+  должен был создать новый; проверьте \`tesmioloader.log\`. При \`adopt = 0\` это
+  ожидаемо — здание остаётся без города.
+- **Хотите вернуть базовую игру** — поставьте \`enabled = 0\` или снимите
+  галочку с \`cities\` в лаунчере. При следующей загрузке сохранения все города
+  вернутся к 1000 м кругу, а здания будут перераспределены соответственно.
+`,
 };
 
 const EMBEDDED_FILE_LIST = [
@@ -2082,34 +2486,13 @@ const EMBEDDED_FILE_LIST = [
     "06-walking.md",
     "06-walking_RU.md",
     "07-buildings.md",
-    "07-buildings_RU.md"
+    "07-buildings_RU.md",
+    "08-cities.md",
+    "08-cities_RU.md"
 ];
 
 /* Заголовки навигации (из H1 .md файлов + titles.json) */
 const EMBEDDED_NAV_TITLES = {
-    "resources": {
-        "EN": "Resources",
-        "RU": "Resources"
-    },
-    "buildings": {
-        "EN": "Buildings",
-        "RU": "Buildings"
-    },
-    "accumulator": {
-        "EN": "Accumulator",
-        "RU": "Accumulator"
-    },
-    "deposits": {
-        "EN": "Deposits",
-        "RU": "Deposits"
-    },
-    "introduction": {
-        "EN": "Introduction"
-    },
-    "walking": {
-        "EN": "Walking",
-        "RU": "Walking"
-    },
     "needs": {
         "EN": "Needs",
         "RU": "Needs"
@@ -2118,9 +2501,36 @@ const EMBEDDED_NAV_TITLES = {
         "EN": "Introduction",
         "RU": "Введение"
     },
+    "accumulator": {
+        "EN": "Accumulator",
+        "RU": "Accumulator"
+    },
+    "introduction": {
+        "EN": "Introduction"
+    },
     "depletion": {
         "EN": "Depletion",
         "RU": "Depletion"
+    },
+    "deposits": {
+        "EN": "Deposits",
+        "RU": "Deposits"
+    },
+    "walking": {
+        "EN": "Walking",
+        "RU": "Walking"
+    },
+    "buildings": {
+        "EN": "Buildings (WiP)",
+        "RU": "Buildings (WiP)"
+    },
+    "cities": {
+        "EN": "Cities",
+        "RU": "Cities"
+    },
+    "resources": {
+        "EN": "Resources",
+        "RU": "Resources"
     }
 };
 

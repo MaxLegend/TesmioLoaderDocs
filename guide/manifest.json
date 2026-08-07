@@ -1,12 +1,20 @@
 [
   "00-getting-started.md",
   "00-getting-started_RU.md",
-  "01-installation.md",
-  "01-installation_RU.md",
-  "02-configuration.md",
-  "02-configuration_RU.md",
-  "03-features.md",
-  "03-features_RU.md",
-  "04-faq.md",
-  "04-faq_RU.md"
+  "01-resources.md",
+  "01-resources_RU.md",
+  "02-deposits.md",
+  "02-deposits_RU.md",
+  "03-depletion.md",
+  "03-depletion_RU.md",
+  "04-accumulator.md",
+  "04-accumulator_RU.md",
+  "05-needs.md",
+  "05-needs_RU.md",
+  "06-walking.md",
+  "06-walking_RU.md",
+  "07-buildings.md",
+  "07-buildings_RU.md",
+  "08-cities.md",
+  "08-cities_RU.md"
 ]

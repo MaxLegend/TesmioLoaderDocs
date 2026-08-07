@@ -137,7 +137,8 @@ adjust a number" and "I lost my city".
 | [04-accumulator](04-accumulator.md) | Build a battery that stores spare electricity |
 | [05-needs](05-needs.md) | Give citizens a new thing to shop for |
 | [06-walking](06-walking.md) | Change how far citizens will walk or drive |
-| [07-buildings](07-buildings.md) | Add a whole new building by cloning an existing one |
+| [07-buildings](07-buildings.md) | Add a whole new building by cloning an existing one **(WiP)** |
+| [08-cities](08-cities.md) | Change each city's radius and shape independently |
 
 Read a guide's own warnings before turning its plugin on — a couple of them
 (resources, needs, depletion) touch the save file in ways that are not
